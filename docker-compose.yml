@@ -1,0 +1,76 @@
+version: "3.7"
+services:
+
+  airflow:
+    image: fesaille/airflow
+    container_name: airflow
+    build:
+      context: .
+    restart: always
+    env_file: env/pg_airflow.env
+    environment:
+      # POSTGRES_PASSWORD: mypassword
+      # POSTGRES_USER: airflow
+      # POSTGRES_DB: airflow
+      # POSTGRES_HOST: postgres_airflow
+      # AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:mypassword@postgres_airflow/airflow
+      AIRFLOW__CORE__EXECUTOR: DaskExecutor
+      AIRFLOW__DASK__CLUSTER_ADDRESS: dask-scheduler:8786
+    ports:
+      - 8080:8080
+    depends_on:
+      - "postgres"
+      - "dask-worker"
+    volumes:
+      - $HOME/.local/share/airflow/dags:/usr/local/airflow/dags
+
+  postgres:
+    image: postgres
+    restart: always
+    container_name: postgres_airflow
+    environment:
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_USER: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_pvc:/var/lib/postgresql/data
+
+  dask-scheduler:
+    image: daskdev/dask
+    build:
+      context: ./dask
+      dockerfile: Dockerfile
+    hostname: dask-scheduler
+    container_name: dask_scheduler
+
+    ports:
+      - "8786:8786"
+      - "8787:8787"
+    command: ["dask-scheduler"]
+
+  dask-worker:
+    image: daskdev/dask
+    build:
+      context: ./dask
+      dockerfile: Dockerfile
+    hostname: dask-worker
+    container_name: dask_worker
+
+    depends_on:
+      - "dask-scheduler"
+    ports:
+      - 8793:8793
+    environment:
+      AIRFLOW_HOME: /usr/local/airflow
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:mypassword@postgres_airflow/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "True"
+    command: ["dask-worker", "tcp://dask-scheduler:8786"]
+    volumes:
+      - $HOME/.local/share/airflow/dags:/usr/local/airflow/dags
+
+
+volumes:
+  postgres_pvc:
+    name: volume-for-airflow

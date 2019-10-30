@@ -1,0 +1,56 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: airflow-deployment
+spec:
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: airflow
+        environment: test
+        revision: "1"
+    spec:
+      containers:
+      - name: airflow
+        labels:
+          app: airflow
+        # Pulls the default airflow (not official) image from Docker Hub
+        image: puckel/docker-airflow
+        # args:
+        # - server
+        # - /storage
+        resources:
+            requests:
+              cpu: 10m
+              memory: 50Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        # securityContext:
+        #   runAsUser: 1000
+        # env:
+        # - name: LOAD_EX
+        #   value: "y"
+        # - name: airflow_ACCESS_KEY
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: airflow-secret
+        #       key: airflow_ACCESS_KEY
+        # - name: airflow_SECRET_KEY
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: airflow-secret
+        #       key: airflow_SECRET_KEY
+        ports:
+        - containerPort: 8080
+        # volumeMounts:
+        # - name: storage # must match the volume name, above
+        #   mountPath: "/storage"
+      # initContainers:
+      # - name: init-myservice
+      #   image: busybox:latest
+      #   command: ['chmod', '777', '/usr/local/airflow/unittests.cfg']
+

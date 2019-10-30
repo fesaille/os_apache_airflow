@@ -1,0 +1,192 @@
+# -*- coding: utf-8 -*-
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+"""
+### Tutorial Documentation
+Documentation that goes along with the Airflow tutorial located
+[here](https://airflow.apache.org/tutorial.html)
+"""
+
+from datetime import datetime, timedelta
+
+import airflow
+from airflow import DAG
+from airflow.hooks.base_hook import BaseHook
+from airflow.operators.bash_operator import BashOperator
+from airflow.operators.python_operator import PythonOperator
+from airflow.contrib.operators.s3_list_operator import S3ListOperator
+from os import environ
+
+MINIO_ACCESS_KEY = environ["MINIO_ACCESS_KEY"]
+MINIO_SECRET_KEY = environ["MINIO_SECRET_KEY"]
+MINIO_HOST = environ["MINIO_HOST"]
+
+MONGO_LOGIN = environ["MONGO_LOGIN"]
+MONGO_PASSWORD = environ["MONGO_PASSWORD"]
+MONGO_HOST = environ["MONGO_HOST"]
+
+
+
+# From https://stackoverflow.com/questions/56626258
+def list_connections(**context):
+
+    from airflow import settings
+    from airflow.models import Connection
+
+    session = settings.Session() # get the session
+
+    if not 'minio' in [c.conn_id for c in session.query(Connection).all()]:
+        minio = Connection(conn_id='minio',
+                           conn_type='s3',
+                           login=MINIO_ACCESS_KEY,
+                           password=MINIO_SECRET_KEY,
+                           extra=f'{{"host": "{MINIO_HOST}"}}')
+
+        #create a connection object
+        session.add(minio)
+        session.commit() # it will insert the connection object programmatically.
+        return "Connection created"
+
+    if not 'atlas' in [c.conn_id for c in session.query(Connection).all()]:
+        atlas = Connection(conn_id='mongo_atlas',
+                           conn_type='mongo',
+                           login=MONGO_LOGIN,
+                           password=MONGO_PASSWORD,
+                           host=MONGO_HOST)
+        session.add(atlas)
+        session.commit() # it will insert the connection object programmatically.
+
+
+    return "Connection already existing"
+
+# These args will get passed on to each operator
+# You can override them on a per-task basis during operator initialization
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': airflow.utils.dates.days_ago(2),
+    'execution_timeout': timedelta(seconds=10),
+    'email': ['shiliba@yahoo.fr'],
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=1),
+    # 'queue': 'bash_queue',
+    # 'pool': 'backfill',
+    # 'priority_weight': 10,
+    # 'end_date': datetime(2016, 1, 1),
+    # 'wait_for_downstream': False,
+    # 'dag': dag,
+    # 'sla': timedelta(hours=2),
+    # 'on_failure_callback': some_function,
+    # 'on_success_callback': some_other_function,
+    # 'on_retry_callback': another_function,
+    # 'trigger_rule': u'all_success'
+}
+
+dag = DAG(
+    '_S3_to_log',
+    default_args=default_args,
+    description='Test grabing data from S3',
+    schedule_interval=timedelta(days=1),
+)
+
+test_minio_connection = PythonOperator(
+    task_id='test_minio_connection',
+    python_callable=list_connections,
+    provide_context=True,
+    dag=dag
+)
+
+# t1, t2 and t3 are examples of tasks created by instantiating operators
+t1 = BashOperator(
+    task_id='print_date',
+    bash_command='date',
+    dag=dag
+)
+
+t1.doc_md = """\
+#### Task Documentation
+You can document your task using the attributes `doc_md` (markdown),
+`doc` (plain text), `doc_rst`, `doc_json`, `doc_yaml` which gets
+rendered in the UI's Task Instance Details page.
+![img](http://montcs.bloomu.edu/~bobmon/Semesters/2012-01/491/import%20soul.png)
+"""
+
+dag.doc_md = __doc__
+
+t2 = BashOperator(
+    task_id='sleep',
+    depends_on_past=False,
+    bash_command='sleep 1',
+    dag=dag,
+)
+
+templated_command = """
+{% for i in range(5) %}
+    echo "{{ ds }}"
+    echo "{{ macros.ds_add(ds, 7)}}"
+    echo "{{ params.my_param }}"
+{% endfor %}
+"""
+
+t3 = BashOperator(
+    task_id='templated',
+    depends_on_past=False,
+    bash_command=templated_command,
+    params={'my_param': 'Parameter I passed in'},
+    dag=dag,
+)
+
+
+s3_file = S3ListOperator(
+    task_id='list_3s_files',
+    bucket='cat',
+    delimiter='/',
+    aws_conn_id='minio',
+    dag=dag
+)
+
+from airflow.models import BaseOperator
+from airflow.contrib.hooks.mongo_hook import MongoHook
+from airflow.utils.decorators import apply_defaults
+
+class MongoListDatabasesOperator(BaseOperator):
+    @apply_defaults
+    def __init__(self, conn_id, *args, **kwargs):
+       super().__init__(*args, **kwargs)
+       self.conn_id = conn_id
+
+    def execute(self, context):
+        mongo = MongoHook(conn_id=self.conn_id)
+        return mongo.find('restaurants', {},
+            find_one=True, mongo_db="m201")
+
+
+# aggregate_query = [
+#     { "$match": {
+#         "stars": { $gt: 2 } } },   { $sort: { stars: 1 } },   { $group: { _id: "$cuisine", count: { $sum: 1 } } } ]
+
+mongo_db_test = MongoListDatabasesOperator(
+    task_id='list_mongo_files',
+    conn_id='mongo_atlas',
+    dag=dag
+)
+
+test_minio_connection >> s3_file >> mongo_db_test >> t1 >> t2 >> t3
