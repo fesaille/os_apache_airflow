@@ -1,0 +1,12 @@
+{
+    "name" : "Apache Airflow",
+    "dockerComposeFile": [
+	"./docker-compose.yml"
+    ],
+    "service": "airflow",
+    "extensions": ["ms-python.python"],
+    "settings": {
+    	"terminal.integrated.shell.linux": "/bin/bash"
+    },
+    "workspaceFolder": "/usr/local/airflow"
+}
