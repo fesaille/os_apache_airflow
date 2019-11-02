@@ -1,3 +1,6 @@
 [submodule "mongo"]
 	path = services/mongo
 	url = git@github.com:fesaille/dr_mongo.git
+[submodule "minio"]
+	path = services/minio
+	url = git@github.com:fesaille/dr_minio.git
