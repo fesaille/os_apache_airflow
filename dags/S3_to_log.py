@@ -31,17 +31,9 @@ from airflow.hooks.base_hook import BaseHook
 from airflow.operators.bash_operator import BashOperator
 from airflow.operators.python_operator import PythonOperator
 from airflow.contrib.operators.s3_list_operator import S3ListOperator
+from airflow.hooks.S3_hook import S3Hook
+
 from os import environ
-
-MINIO_ACCESS_KEY = environ["MINIO_ACCESS_KEY"]
-MINIO_SECRET_KEY = environ["MINIO_SECRET_KEY"]
-MINIO_HOST = environ["MINIO_HOST"]
-
-MONGO_LOGIN = environ["MONGO_LOGIN"]
-MONGO_PASSWORD = environ["MONGO_PASSWORD"]
-MONGO_HOST = environ["MONGO_HOST"]
-
-
 
 # From https://stackoverflow.com/questions/56626258
 def list_connections(**context):
@@ -54,26 +46,38 @@ def list_connections(**context):
     if not 'minio' in [c.conn_id for c in session.query(Connection).all()]:
         minio = Connection(conn_id='minio',
                            conn_type='s3',
-                           login=MINIO_ACCESS_KEY,
-                           password=MINIO_SECRET_KEY,
-                           extra=f'{{"host": "{MINIO_HOST}"}}')
+                           login=environ['MINIO_ACCESS_KEY'],
+                           password=environ['MINIO_SECRET_KEY'],
+                           extra='{"host": "http://minio:9000"}')
 
         #create a connection object
         session.add(minio)
         session.commit() # it will insert the connection object programmatically.
-        return "Connection created"
 
-    if not 'atlas' in [c.conn_id for c in session.query(Connection).all()]:
-        atlas = Connection(conn_id='mongo_atlas',
+
+
+    # if not 'mongo_atlas' in [c.conn_id for c in session.query(Connection).all()]:
+    #     atlas = Connection(conn_id='mongo_atlas',
+    #                        conn_type='mongo',
+    #                        login='m220student',
+    #                        password='m220password',
+    #                        port=27017,
+    #                        host='baobab-crx55.mongodb.net')
+    #     session.add(atlas)
+    #     session.commit() # it will insert the connection object programmatically.
+
+    if not 'mongo_local' in [c.conn_id for c in session.query(Connection).all()]:
+        atlas = Connection(conn_id='mongo_local',
                            conn_type='mongo',
-                           login=MONGO_LOGIN,
-                           password=MONGO_PASSWORD,
-                           host=MONGO_HOST)
+                           login=environ['MONGO_INITDB_ROOT_USERNAME'],
+                           password=environ['MONGO_INITDB_ROOT_PASSWORD'],
+                           port=27017,
+                           host='mongo',
+                           schema=environ['MONGO_INITDB_DATABASE'])
         session.add(atlas)
         session.commit() # it will insert the connection object programmatically.
 
 
-    return "Connection already existing"
 
 # These args will get passed on to each operator
 # You can override them on a per-task basis during operator initialization
@@ -82,8 +86,7 @@ default_args = {
     'depends_on_past': False,
     'start_date': airflow.utils.dates.days_ago(2),
     'execution_timeout': timedelta(seconds=10),
-    'email': ['shiliba@yahoo.fr'],
-    'email_on_failure': True,
+    'email_on_failure': False,
     'email_on_retry': False,
     'retries': 1,
     'retry_delay': timedelta(minutes=1),
@@ -155,14 +158,6 @@ t3 = BashOperator(
 )
 
 
-s3_file = S3ListOperator(
-    task_id='list_3s_files',
-    bucket='cat',
-    delimiter='/',
-    aws_conn_id='minio',
-    dag=dag
-)
-
 from airflow.models import BaseOperator
 from airflow.contrib.hooks.mongo_hook import MongoHook
 from airflow.utils.decorators import apply_defaults
@@ -174,9 +169,73 @@ class MongoListDatabasesOperator(BaseOperator):
        self.conn_id = conn_id
 
     def execute(self, context):
-        mongo = MongoHook(conn_id=self.conn_id)
-        return mongo.find('restaurants', {},
-            find_one=True, mongo_db="m201")
+        mongo = MongoHook(conn_id=self.conn_id, )
+        mongo.uri, dbname = mongo.uri.rsplit("/", maxsplit=1)
+        # conn = mongo.get_conn()
+
+        # return conn.list_database_names()
+
+        posts = mongo.get_collection("posts", dbname)
+
+        import datetime
+        post = {"author": "Mike",
+            "text": "My first blog post!",
+            "tags": ["mongodb", "python", "pymongo"],
+            "date": datetime.datetime.utcnow()}
+        # posts = db.posts
+        post_id = posts.insert_one(post).inserted_id
+        # collection = mongo.get_collection('people', mongo_db='starwars')
+        # res = collection.find_one()
+        # return str(res['_id'])
+        return str(post_id)
+
+
+
+class S3ListOrCreateOperator(BaseOperator):
+    template_fields = ('bucket', 'prefix', 'delimiter')  # type: Iterable[str]
+    ui_color = '#ffd700'
+
+    @apply_defaults
+    def __init__(self,
+                 bucket,
+                 prefix='',
+                 delimiter='',
+                 aws_conn_id='aws_default',
+                 verify=None,
+                 *args,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bucket = bucket
+        self.prefix = prefix
+        self.delimiter = delimiter
+        self.aws_conn_id = aws_conn_id
+        self.verify = verify
+
+    def execute(self, context):
+        hook = S3Hook(aws_conn_id=self.aws_conn_id, verify=self.verify)
+
+        self.log.info(
+            'Getting the list of files from bucket: %s in prefix: %s (Delimiter {%s)',
+            self.bucket, self.prefix, self.delimiter
+        )
+
+        try:
+            docs = hook.list_keys(
+                bucket_name=self.bucket,
+                prefix=self.prefix,
+                delimiter=self.delimiter)
+        except Exception:
+            hook.create_bucket(bucket_name=self.bucket)
+            return
+
+
+s3_file = S3ListOrCreateOperator(
+    task_id='list_3s_files',
+    bucket='cat',
+    delimiter='/',
+    aws_conn_id='minio',
+    dag=dag
+)
 
 
 # aggregate_query = [
@@ -185,7 +244,7 @@ class MongoListDatabasesOperator(BaseOperator):
 
 mongo_db_test = MongoListDatabasesOperator(
     task_id='list_mongo_files',
-    conn_id='mongo_atlas',
+    conn_id='mongo_local',
     dag=dag
 )
 
