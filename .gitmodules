@@ -4,3 +4,6 @@
 [submodule "minio"]
 	path = services/minio
 	url = git@github.com:fesaille/dr_minio.git
+[submodule "dask"]
+	path = executor/dask
+	url = git@github.com:fesaille/dr_dask.git
