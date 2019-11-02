@@ -1,0 +1,3 @@
+[submodule "mongo"]
+	path = services/mongo
+	url = git@github.com:fesaille/dr_mongo.git
