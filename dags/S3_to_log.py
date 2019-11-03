@@ -35,6 +35,17 @@ from airflow.hooks.S3_hook import S3Hook
 
 from os import environ
 
+
+PythonOperator.ui_color = "#4584b6"
+PythonOperator.ui_fgcolor = "#ffffff"
+
+
+
+BashOperator.ui_color = "#000000"
+BashOperator.ui_fgcolor = "#ffffff"
+
+
+
 # From https://stackoverflow.com/questions/56626258
 def list_connections(**context):
 
@@ -123,6 +134,7 @@ t1 = BashOperator(
     bash_command='date',
     dag=dag
 )
+
 
 t1.doc_md = """\
 #### Task Documentation
