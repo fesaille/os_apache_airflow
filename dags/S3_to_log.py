@@ -163,6 +163,8 @@ from airflow.contrib.hooks.mongo_hook import MongoHook
 from airflow.utils.decorators import apply_defaults
 
 class MongoListDatabasesOperator(BaseOperator):
+    ui_color = '#589636'
+
     @apply_defaults
     def __init__(self, conn_id, *args, **kwargs):
        super().__init__(*args, **kwargs)
