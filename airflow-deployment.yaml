@@ -30,8 +30,8 @@ spec:
               cpu: 10m
               memory: 50Mi
             limits:
-              cpu: 500m
-              memory: 512Mi
+              cpu: 1000m
+              memory: 1024Mi
         env:
         - name: LOAD_EX
           value: 'y'
