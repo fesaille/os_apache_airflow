@@ -7,3 +7,6 @@
 [submodule "dask"]
 	path = executor/dask
 	url = git@github.com:fesaille/dr_dask.git
+[submodule "extern/airflow"]
+	path = extern/airflow
+	url = https://github.com/apache/airflow.git
